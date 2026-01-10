@@ -1,0 +1,19 @@
+{
+	"name": "command-overview",
+	"version": "1.0.0",
+	"description": "Obsidian plugin to display a command overview overlay",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "node esbuild.config.mjs production",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"@types/node": "^25.0.5",
+		"esbuild": "^0.27.2",
+		"obsidian": "^1.11.4",
+		"typescript": "^5.9.3"
+	}
+}
