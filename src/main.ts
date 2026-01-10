@@ -1,5 +1,41 @@
 import { App, Plugin, PluginSettingTab, Setting, Command } from 'obsidian';
 
+// Extended type definitions for undocumented Obsidian APIs
+interface HotkeyInfo {
+	modifiers: string[];
+	key: string;
+}
+
+interface CommandManager {
+	commands: Record<string, Command>;
+	executeCommandById(id: string): boolean;
+}
+
+interface HotkeyManager {
+	customKeys: Record<string, HotkeyInfo[]>;
+	defaultKeys: Record<string, HotkeyInfo[]>;
+}
+
+interface PluginManifest {
+	name: string;
+	id: string;
+	version: string;
+}
+
+interface LoadedPlugin {
+	manifest: PluginManifest;
+}
+
+interface PluginManager {
+	plugins: Record<string, LoadedPlugin>;
+}
+
+interface ExtendedApp extends App {
+	commands: CommandManager;
+	hotkeyManager?: HotkeyManager;
+	plugins?: PluginManager;
+}
+
 interface CommandOverviewSettings {
 	triggerKey: string;
 	modifiers: {
@@ -66,6 +102,13 @@ export default class CommandOverviewPlugin extends Plugin {
 	// For proper cleanup
 	private hideTimeoutId: number | null = null;
 	private abortController: AbortController | null = null;
+
+	/**
+	 * Get the app with extended type information for undocumented APIs
+	 */
+	private get extendedApp(): ExtendedApp {
+		return this.app as ExtendedApp;
+	}
 
 	async onload() {
 		await this.loadSettings();
@@ -183,8 +226,7 @@ export default class CommandOverviewPlugin extends Plugin {
 			const cmdId = selectedItem.dataset.commandId;
 			if (cmdId) {
 				this.hideOverlay();
-				// @ts-ignore
-				this.app.commands.executeCommandById(cmdId);
+				this.extendedApp.commands.executeCommandById(cmdId);
 			}
 		}
 	}
@@ -268,8 +310,7 @@ export default class CommandOverviewPlugin extends Plugin {
 				const cmdId = item.dataset.commandId;
 				if (cmdId) {
 					this.hideOverlay();
-					// @ts-ignore
-					this.app.commands.executeCommandById(cmdId);
+					this.extendedApp.commands.executeCommandById(cmdId);
 				}
 			}
 		}, { signal });
@@ -462,12 +503,9 @@ export default class CommandOverviewPlugin extends Plugin {
 	}
 
 	getSelectedCommands(): CommandWithHotkey[] {
-		// @ts-ignore
-		const allCommands: Record<string, Command> = this.app.commands.commands;
-		// @ts-ignore
-		const hotkeys = this.app.hotkeyManager?.customKeys || {};
-		// @ts-ignore
-		const defaultHotkeys = this.app.hotkeyManager?.defaultKeys || {};
+		const allCommands = this.extendedApp.commands.commands;
+		const hotkeys = this.extendedApp.hotkeyManager?.customKeys || {};
+		const defaultHotkeys = this.extendedApp.hotkeyManager?.defaultKeys || {};
 
 		const result: CommandWithHotkey[] = [];
 
@@ -497,8 +535,7 @@ export default class CommandOverviewPlugin extends Plugin {
 		if (parts.length >= 2) {
 			const pluginId = parts[0];
 			// Versuche Plugin-Name zu finden
-			// @ts-ignore
-			const plugin = this.app.plugins?.plugins?.[pluginId];
+			const plugin = this.extendedApp.plugins?.plugins?.[pluginId];
 			if (plugin?.manifest?.name) {
 				return plugin.manifest.name;
 			}
@@ -527,8 +564,7 @@ export default class CommandOverviewPlugin extends Plugin {
 	}
 
 	getAllCommands(): Command[] {
-		// @ts-ignore
-		return Object.values(this.app.commands.commands);
+		return Object.values(this.extendedApp.commands.commands);
 	}
 }
 

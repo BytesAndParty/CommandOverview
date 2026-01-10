@@ -117,6 +117,12 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     this.hideTimeoutId = null;
     this.abortController = null;
   }
+  /**
+   * Get the app with extended type information for undocumented APIs
+   */
+  get extendedApp() {
+    return this.app;
+  }
   async onload() {
     await this.loadSettings();
     this.addRibbonIcon("list", "Command Overview", () => {
@@ -209,7 +215,7 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
       const cmdId = selectedItem.dataset.commandId;
       if (cmdId) {
         this.hideOverlay();
-        this.app.commands.executeCommandById(cmdId);
+        this.extendedApp.commands.executeCommandById(cmdId);
       }
     }
   }
@@ -268,7 +274,7 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
         const cmdId = item.dataset.commandId;
         if (cmdId) {
           this.hideOverlay();
-          this.app.commands.executeCommandById(cmdId);
+          this.extendedApp.commands.executeCommandById(cmdId);
         }
       }
     }, { signal });
@@ -417,9 +423,9 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
   }
   getSelectedCommands() {
     var _a, _b;
-    const allCommands = this.app.commands.commands;
-    const hotkeys = ((_a = this.app.hotkeyManager) == null ? void 0 : _a.customKeys) || {};
-    const defaultHotkeys = ((_b = this.app.hotkeyManager) == null ? void 0 : _b.defaultKeys) || {};
+    const allCommands = this.extendedApp.commands.commands;
+    const hotkeys = ((_a = this.extendedApp.hotkeyManager) == null ? void 0 : _a.customKeys) || {};
+    const defaultHotkeys = ((_b = this.extendedApp.hotkeyManager) == null ? void 0 : _b.defaultKeys) || {};
     const result = [];
     for (const cmdId of this.settings.selectedCommands) {
       const command = allCommands[cmdId];
@@ -442,7 +448,7 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     const parts = commandId.split(":");
     if (parts.length >= 2) {
       const pluginId = parts[0];
-      const plugin = (_b = (_a = this.app.plugins) == null ? void 0 : _a.plugins) == null ? void 0 : _b[pluginId];
+      const plugin = (_b = (_a = this.extendedApp.plugins) == null ? void 0 : _a.plugins) == null ? void 0 : _b[pluginId];
       if ((_c = plugin == null ? void 0 : plugin.manifest) == null ? void 0 : _c.name) {
         return plugin.manifest.name;
       }
@@ -463,7 +469,7 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     return parts.join(" + ");
   }
   getAllCommands() {
-    return Object.values(this.app.commands.commands);
+    return Object.values(this.extendedApp.commands.commands);
   }
 };
 var CommandOverviewSettingTab = class extends import_obsidian.PluginSettingTab {
