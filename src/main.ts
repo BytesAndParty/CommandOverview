@@ -32,6 +32,29 @@ const DEFAULT_SETTINGS: CommandOverviewSettings = {
 	groupByPlugin: true
 };
 
+// Valid trigger keys whitelist for security
+const VALID_TRIGGER_KEYS = [
+	// Function keys
+	'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+	// Special keys
+	'Slash', 'Backslash', 'BracketLeft', 'BracketRight', 'Comma', 'Period',
+	'Semicolon', 'Quote', 'Backquote', 'Minus', 'Equal', 'Space',
+	// Letter keys
+	'KeyA', 'KeyB', 'KeyC', 'KeyD', 'KeyE', 'KeyF', 'KeyG', 'KeyH', 'KeyI',
+	'KeyJ', 'KeyK', 'KeyL', 'KeyM', 'KeyN', 'KeyO', 'KeyP', 'KeyQ', 'KeyR',
+	'KeyS', 'KeyT', 'KeyU', 'KeyV', 'KeyW', 'KeyX', 'KeyY', 'KeyZ',
+	// Number keys
+	'Digit0', 'Digit1', 'Digit2', 'Digit3', 'Digit4',
+	'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
+];
+
+/**
+ * Validates if a trigger key is in the allowed whitelist
+ */
+function isValidTriggerKey(key: string): boolean {
+	return VALID_TRIGGER_KEYS.includes(key);
+}
+
 export default class CommandOverviewPlugin extends Plugin {
 	settings: CommandOverviewSettings;
 	overlayEl: HTMLElement | null = null;
@@ -509,13 +532,19 @@ class CommandOverviewSettingTab extends PluginSettingTab {
 		// Trigger Key
 		new Setting(containerEl)
 			.setName('Trigger-Taste')
-			.setDesc('Die Taste die das Overlay öffnet (z.B. Slash, F1, KeyK)')
+			.setDesc('Die Taste die das Overlay öffnet (z.B. Slash, F1, KeyK). Gültige Werte: F1-F12, KeyA-KeyZ, Digit0-9, Slash, Space, etc.')
 			.addText(text => text
 				.setPlaceholder('Slash')
 				.setValue(this.plugin.settings.triggerKey)
 				.onChange(async (value) => {
-					this.plugin.settings.triggerKey = value;
-					await this.plugin.saveSettings();
+					const trimmed = value.trim();
+					if (isValidTriggerKey(trimmed)) {
+						this.plugin.settings.triggerKey = trimmed;
+						await this.plugin.saveSettings();
+					} else if (trimmed.length > 0) {
+						// Reset to previous valid value if invalid
+						text.setValue(this.plugin.settings.triggerKey);
+					}
 				}));
 
 		// Modifiers
