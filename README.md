@@ -77,6 +77,15 @@ bun run build
 bun run typecheck
 ```
 
+## Part of the BytesAndParty Plugin Suite
+
+This plugin works great alongside other plugins from the same author:
+
+- [Auto Categories](https://github.com/BytesAndParty/Obsidian_AutoCategories) - Automatically create category pages from frontmatter
+- [Better Gitignore](https://github.com/BytesAndParty/BetterGitignore) - Beautiful .gitignore editor with templates
+- [Company Knowledge Hub](https://github.com/BytesAndParty/CompanyKnowledgeHub) - Publish notes to a shared knowledge base
+- [Customer Tag](https://github.com/BytesAndParty/CustomerTag) - Organize notes by customer tags
+
 ## License
 
 MIT
