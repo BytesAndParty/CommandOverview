@@ -63,6 +63,9 @@ export default class CommandOverviewPlugin extends Plugin {
 	listEl: HTMLElement | null = null;
 	selectedIndex: number = 0;
 	filteredCommands: CommandWithHotkey[] = [];
+	// For proper cleanup
+	private hideTimeoutId: number | null = null;
+	private abortController: AbortController | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -92,7 +95,20 @@ export default class CommandOverviewPlugin extends Plugin {
 	}
 
 	onunload() {
-		this.hideOverlay();
+		// Clean up any pending timeouts
+		if (this.hideTimeoutId !== null) {
+			window.clearTimeout(this.hideTimeoutId);
+			this.hideTimeoutId = null;
+		}
+		// Abort any pending event listeners
+		this.abortController?.abort();
+		this.abortController = null;
+		// Remove overlay immediately
+		this.overlayEl?.remove();
+		this.overlayEl = null;
+		this.listEl = null;
+		this.searchInputEl = null;
+		this.isOverlayVisible = false;
 		console.log('Command Overview Plugin unloaded');
 	}
 
@@ -208,6 +224,11 @@ export default class CommandOverviewPlugin extends Plugin {
 	showOverlay() {
 		if (this.isOverlayVisible) return;
 
+		// Create new AbortController for this overlay instance
+		this.abortController?.abort();
+		this.abortController = new AbortController();
+		const signal = this.abortController.signal;
+
 		this.selectedIndex = 0;
 		this.filteredCommands = this.getSelectedCommands();
 
@@ -231,7 +252,7 @@ export default class CommandOverviewPlugin extends Plugin {
 		this.searchInputEl.type = 'text';
 		this.searchInputEl.placeholder = 'Suchen...';
 		this.searchInputEl.addClass('command-overview-search');
-		this.searchInputEl.addEventListener('input', () => this.handleSearch());
+		this.searchInputEl.addEventListener('input', () => this.handleSearch(), { signal });
 		header.appendChild(this.searchInputEl);
 
 		container.appendChild(header);
@@ -239,6 +260,31 @@ export default class CommandOverviewPlugin extends Plugin {
 		// Liste
 		this.listEl = document.createElement('div');
 		this.listEl.addClass('command-overview-list');
+
+		// Event delegation for click and mouseenter on list items
+		this.listEl.addEventListener('click', (e) => {
+			const item = (e.target as HTMLElement).closest('.command-overview-item') as HTMLElement;
+			if (item) {
+				const cmdId = item.dataset.commandId;
+				if (cmdId) {
+					this.hideOverlay();
+					// @ts-ignore
+					this.app.commands.executeCommandById(cmdId);
+				}
+			}
+		}, { signal });
+
+		this.listEl.addEventListener('mouseenter', (e) => {
+			const item = (e.target as HTMLElement).closest('.command-overview-item') as HTMLElement;
+			if (item) {
+				const items = this.getVisibleItems();
+				const newIndex = items.indexOf(item);
+				if (newIndex !== -1) {
+					this.selectedIndex = newIndex;
+					this.updateSelection();
+				}
+			}
+		}, { signal, capture: true });
 
 		if (this.filteredCommands.length === 0) {
 			const emptyMsg = document.createElement('div');
@@ -257,7 +303,7 @@ export default class CommandOverviewPlugin extends Plugin {
 			if (e.target === this.overlayEl) {
 				this.hideOverlay();
 			}
-		});
+		}, { signal });
 
 		document.body.appendChild(this.overlayEl);
 		this.isOverlayVisible = true;
@@ -364,14 +410,24 @@ export default class CommandOverviewPlugin extends Plugin {
 	hideOverlay() {
 		if (!this.overlayEl) return;
 
+		// Abort all event listeners attached to overlay elements
+		this.abortController?.abort();
+		this.abortController = null;
+
 		this.overlayEl.removeClass('is-visible');
 
-		setTimeout(() => {
+		// Clear any pending hide timeout
+		if (this.hideTimeoutId !== null) {
+			window.clearTimeout(this.hideTimeoutId);
+		}
+
+		this.hideTimeoutId = window.setTimeout(() => {
 			this.overlayEl?.remove();
 			this.overlayEl = null;
 			this.listEl = null;
 			this.searchInputEl = null;
 			this.isOverlayVisible = false;
+			this.hideTimeoutId = null;
 		}, 150);
 	}
 
@@ -399,22 +455,8 @@ export default class CommandOverviewPlugin extends Plugin {
 		hotkey.textContent = cmd.hotkey || 'Kein Shortcut';
 		item.appendChild(hotkey);
 
-		// Klickbar
-		item.addEventListener('click', () => {
-			this.hideOverlay();
-			// @ts-ignore
-			this.app.commands.executeCommandById(cmd.command.id);
-		});
-
-		// Hover selection
-		item.addEventListener('mouseenter', () => {
-			const items = this.getVisibleItems();
-			const newIndex = items.indexOf(item);
-			if (newIndex !== -1) {
-				this.selectedIndex = newIndex;
-				this.updateSelection();
-			}
-		});
+		// Note: Click and mouseenter events are handled via event delegation on listEl
+		// This prevents memory leaks from individual event listeners on each item
 
 		return item;
 	}

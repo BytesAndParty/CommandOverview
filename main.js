@@ -35,6 +35,75 @@ var DEFAULT_SETTINGS = {
   selectedCommands: [],
   groupByPlugin: true
 };
+var VALID_TRIGGER_KEYS = [
+  // Function keys
+  "F1",
+  "F2",
+  "F3",
+  "F4",
+  "F5",
+  "F6",
+  "F7",
+  "F8",
+  "F9",
+  "F10",
+  "F11",
+  "F12",
+  // Special keys
+  "Slash",
+  "Backslash",
+  "BracketLeft",
+  "BracketRight",
+  "Comma",
+  "Period",
+  "Semicolon",
+  "Quote",
+  "Backquote",
+  "Minus",
+  "Equal",
+  "Space",
+  // Letter keys
+  "KeyA",
+  "KeyB",
+  "KeyC",
+  "KeyD",
+  "KeyE",
+  "KeyF",
+  "KeyG",
+  "KeyH",
+  "KeyI",
+  "KeyJ",
+  "KeyK",
+  "KeyL",
+  "KeyM",
+  "KeyN",
+  "KeyO",
+  "KeyP",
+  "KeyQ",
+  "KeyR",
+  "KeyS",
+  "KeyT",
+  "KeyU",
+  "KeyV",
+  "KeyW",
+  "KeyX",
+  "KeyY",
+  "KeyZ",
+  // Number keys
+  "Digit0",
+  "Digit1",
+  "Digit2",
+  "Digit3",
+  "Digit4",
+  "Digit5",
+  "Digit6",
+  "Digit7",
+  "Digit8",
+  "Digit9"
+];
+function isValidTriggerKey(key) {
+  return VALID_TRIGGER_KEYS.includes(key);
+}
 var CommandOverviewPlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
@@ -44,6 +113,9 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     this.listEl = null;
     this.selectedIndex = 0;
     this.filteredCommands = [];
+    // For proper cleanup
+    this.hideTimeoutId = null;
+    this.abortController = null;
   }
   async onload() {
     await this.loadSettings();
@@ -63,7 +135,18 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     console.log("Command Overview Plugin loaded");
   }
   onunload() {
-    this.hideOverlay();
+    var _a, _b;
+    if (this.hideTimeoutId !== null) {
+      window.clearTimeout(this.hideTimeoutId);
+      this.hideTimeoutId = null;
+    }
+    (_a = this.abortController) == null ? void 0 : _a.abort();
+    this.abortController = null;
+    (_b = this.overlayEl) == null ? void 0 : _b.remove();
+    this.overlayEl = null;
+    this.listEl = null;
+    this.searchInputEl = null;
+    this.isOverlayVisible = false;
     console.log("Command Overview Plugin unloaded");
   }
   async loadSettings() {
@@ -153,7 +236,11 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     }
   }
   showOverlay() {
+    var _a;
     if (this.isOverlayVisible) return;
+    (_a = this.abortController) == null ? void 0 : _a.abort();
+    this.abortController = new AbortController();
+    const signal = this.abortController.signal;
     this.selectedIndex = 0;
     this.filteredCommands = this.getSelectedCommands();
     this.overlayEl = document.createElement("div");
@@ -170,11 +257,32 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     this.searchInputEl.type = "text";
     this.searchInputEl.placeholder = "Suchen...";
     this.searchInputEl.addClass("command-overview-search");
-    this.searchInputEl.addEventListener("input", () => this.handleSearch());
+    this.searchInputEl.addEventListener("input", () => this.handleSearch(), { signal });
     header.appendChild(this.searchInputEl);
     container.appendChild(header);
     this.listEl = document.createElement("div");
     this.listEl.addClass("command-overview-list");
+    this.listEl.addEventListener("click", (e) => {
+      const item = e.target.closest(".command-overview-item");
+      if (item) {
+        const cmdId = item.dataset.commandId;
+        if (cmdId) {
+          this.hideOverlay();
+          this.app.commands.executeCommandById(cmdId);
+        }
+      }
+    }, { signal });
+    this.listEl.addEventListener("mouseenter", (e) => {
+      const item = e.target.closest(".command-overview-item");
+      if (item) {
+        const items = this.getVisibleItems();
+        const newIndex = items.indexOf(item);
+        if (newIndex !== -1) {
+          this.selectedIndex = newIndex;
+          this.updateSelection();
+        }
+      }
+    }, { signal, capture: true });
     if (this.filteredCommands.length === 0) {
       const emptyMsg = document.createElement("div");
       emptyMsg.addClass("command-overview-empty");
@@ -189,12 +297,12 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
       if (e.target === this.overlayEl) {
         this.hideOverlay();
       }
-    });
+    }, { signal });
     document.body.appendChild(this.overlayEl);
     this.isOverlayVisible = true;
     requestAnimationFrame(() => {
-      var _a, _b;
-      (_a = this.overlayEl) == null ? void 0 : _a.addClass("is-visible");
+      var _a2, _b;
+      (_a2 = this.overlayEl) == null ? void 0 : _a2.addClass("is-visible");
       (_b = this.searchInputEl) == null ? void 0 : _b.focus();
       this.updateSelection();
     });
@@ -269,15 +377,22 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     this.updateSelection();
   }
   hideOverlay() {
+    var _a;
     if (!this.overlayEl) return;
+    (_a = this.abortController) == null ? void 0 : _a.abort();
+    this.abortController = null;
     this.overlayEl.removeClass("is-visible");
-    setTimeout(() => {
-      var _a;
-      (_a = this.overlayEl) == null ? void 0 : _a.remove();
+    if (this.hideTimeoutId !== null) {
+      window.clearTimeout(this.hideTimeoutId);
+    }
+    this.hideTimeoutId = window.setTimeout(() => {
+      var _a2;
+      (_a2 = this.overlayEl) == null ? void 0 : _a2.remove();
       this.overlayEl = null;
       this.listEl = null;
       this.searchInputEl = null;
       this.isOverlayVisible = false;
+      this.hideTimeoutId = null;
     }, 150);
   }
   createCommandItem(cmd, index) {
@@ -298,18 +413,6 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     hotkey.addClass("command-overview-hotkey");
     hotkey.textContent = cmd.hotkey || "Kein Shortcut";
     item.appendChild(hotkey);
-    item.addEventListener("click", () => {
-      this.hideOverlay();
-      this.app.commands.executeCommandById(cmd.command.id);
-    });
-    item.addEventListener("mouseenter", () => {
-      const items = this.getVisibleItems();
-      const newIndex = items.indexOf(item);
-      if (newIndex !== -1) {
-        this.selectedIndex = newIndex;
-        this.updateSelection();
-      }
-    });
     return item;
   }
   getSelectedCommands() {
@@ -381,9 +484,14 @@ var CommandOverviewSettingTab = class extends import_obsidian.PluginSettingTab {
       this.plugin.settings.groupByPlugin = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian.Setting(containerEl).setName("Trigger-Taste").setDesc("Die Taste die das Overlay \xF6ffnet (z.B. Slash, F1, KeyK)").addText((text) => text.setPlaceholder("Slash").setValue(this.plugin.settings.triggerKey).onChange(async (value) => {
-      this.plugin.settings.triggerKey = value;
-      await this.plugin.saveSettings();
+    new import_obsidian.Setting(containerEl).setName("Trigger-Taste").setDesc("Die Taste die das Overlay \xF6ffnet (z.B. Slash, F1, KeyK). G\xFCltige Werte: F1-F12, KeyA-KeyZ, Digit0-9, Slash, Space, etc.").addText((text) => text.setPlaceholder("Slash").setValue(this.plugin.settings.triggerKey).onChange(async (value) => {
+      const trimmed = value.trim();
+      if (isValidTriggerKey(trimmed)) {
+        this.plugin.settings.triggerKey = trimmed;
+        await this.plugin.saveSettings();
+      } else if (trimmed.length > 0) {
+        text.setValue(this.plugin.settings.triggerKey);
+      }
     }));
     containerEl.createEl("h3", { text: "Modifier-Tasten" });
     new import_obsidian.Setting(containerEl).setName("Ctrl").addToggle((toggle) => toggle.setValue(this.plugin.settings.modifiers.ctrl).onChange(async (value) => {
