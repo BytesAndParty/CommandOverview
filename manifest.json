@@ -1,0 +1,9 @@
+{
+	"id": "command-overview",
+	"name": "Command Overview",
+	"version": "1.0.0",
+	"minAppVersion": "1.0.0",
+	"description": "Zeigt ein Overlay mit ausgewählten Commands und deren Shortcuts an.",
+	"author": "Robert Stickler",
+	"isDesktopOnly": false
+}
