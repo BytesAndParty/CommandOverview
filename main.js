@@ -138,7 +138,6 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     this.registerDomEvent(document, "keydown", this.handleKeyDown.bind(this));
     this.registerDomEvent(document, "keyup", this.handleKeyUp.bind(this));
     this.addSettingTab(new CommandOverviewSettingTab(this.app, this));
-    console.log("Command Overview Plugin loaded");
   }
   onunload() {
     var _a, _b;
@@ -153,7 +152,6 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     this.listEl = null;
     this.searchInputEl = null;
     this.isOverlayVisible = false;
-    console.log("Command Overview Plugin unloaded");
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());

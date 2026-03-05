@@ -25,7 +25,7 @@ An Obsidian plugin that displays a customizable overlay showing your selected co
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/command-overview.git
+git clone https://github.com/BytesAndParty/CommandOverview.git
 cd command-overview
 
 # Install dependencies
@@ -77,14 +77,12 @@ bun run build
 bun run typecheck
 ```
 
-## Part of the BytesAndParty Plugin Suite
+## Works Well with Other BytesAndParty Plugins
 
-This plugin works great alongside other plugins from the same author:
-
-- [Auto Categories](https://github.com/BytesAndParty/Obsidian_AutoCategories) - Automatically create category pages from frontmatter
-- [Better Gitignore](https://github.com/BytesAndParty/BetterGitignore) - Beautiful .gitignore editor with templates
-- [Company Knowledge Hub](https://github.com/BytesAndParty/CompanyKnowledgeHub) - Publish notes to a shared knowledge base
-- [Customer Tag](https://github.com/BytesAndParty/CustomerTag) - Organize notes by customer tags
+- [Auto Categories](https://github.com/BytesAndParty/Obsidian_AutoCategories) - Trigger sync and cleanup commands quickly from one overlay.
+- [Company Knowledge Hub](https://github.com/BytesAndParty/CompanyKnowledgeHub) - Keep publish and unpublish commands always accessible.
+- [Customer Tag Sorter](https://github.com/BytesAndParty/CustomerTag) - Run sorting workflows without leaving keyboard navigation.
+- [Obsidian Recall](https://github.com/BytesAndParty/ObsidianRecall) - Start review and stats commands from the same command surface.
 
 ## License
 

@@ -134,7 +134,6 @@ export default class CommandOverviewPlugin extends Plugin {
 		// Settings Tab
 		this.addSettingTab(new CommandOverviewSettingTab(this.app, this));
 
-		console.log('Command Overview Plugin loaded');
 	}
 
 	onunload() {
@@ -152,7 +151,6 @@ export default class CommandOverviewPlugin extends Plugin {
 		this.listEl = null;
 		this.searchInputEl = null;
 		this.isOverlayVisible = false;
-		console.log('Command Overview Plugin unloaded');
 	}
 
 	async loadSettings() {

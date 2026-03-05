@@ -3,7 +3,8 @@
 	"name": "Command Overview",
 	"version": "1.0.0",
 	"minAppVersion": "1.0.0",
-	"description": "Zeigt ein Overlay mit ausgewählten Commands und deren Shortcuts an.",
+	"description": "Displays an overlay with selected commands and their keyboard shortcuts.",
 	"author": "Robert Stickler",
+	"authorUrl": "https://github.com/BytesAndParty",
 	"isDesktopOnly": false
 }
