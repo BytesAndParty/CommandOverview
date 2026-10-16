@@ -80,7 +80,6 @@ bun run typecheck
 ## Works Well with Other BytesAndParty Plugins
 
 - [Auto Categories](https://github.com/BytesAndParty/Obsidian_AutoCategories) - Trigger sync and cleanup commands quickly from one overlay.
-- [Company Knowledge Hub](https://github.com/BytesAndParty/CompanyKnowledgeHub) - Keep publish and unpublish commands always accessible.
 - [Customer Tag Sorter](https://github.com/BytesAndParty/CustomerTag) - Run sorting workflows without leaving keyboard navigation.
 - [Obsidian Recall](https://github.com/BytesAndParty/ObsidianRecall) - Start review and stats commands from the same command surface.
 
