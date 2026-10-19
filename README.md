@@ -26,7 +26,7 @@ An Obsidian plugin that displays a customizable overlay showing your selected co
 ```bash
 # Clone the repository
 git clone https://github.com/BytesAndParty/CommandOverview.git
-cd command-overview
+cd CommandOverview
 
 # Install dependencies
 bun install
@@ -81,6 +81,8 @@ bun run typecheck
 
 - [Auto Categories](https://github.com/BytesAndParty/Obsidian_AutoCategories) - Trigger sync and cleanup commands quickly from one overlay.
 - [Obsidian Recall](https://github.com/BytesAndParty/ObsidianRecall) - Start review and stats commands from the same command surface.
+- [Copy File Path](https://github.com/BytesAndParty/CopyFilePath) - Add "Copy absolute file path" to the overlay and grab a note's system path without remembering another shortcut.
+- [Open Vault in VS Code](https://github.com/BytesAndParty/OpenVaultInVSCode) - Keep "Open vault root in VS Code" next to your other commands for a quick jump into your editor.
 
 ## License
 

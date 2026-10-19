@@ -5,17 +5,20 @@
 	left: 0;
 	right: 0;
 	bottom: 0;
-	background: rgba(0, 0, 0, 0.5);
+	background: var(--background-modifier-cover);
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	z-index: 9999;
+	z-index: var(--layer-modal);
 	opacity: 0;
+	/* Während Ein- und Ausblenden keine Klicks abfangen */
+	pointer-events: none;
 	transition: opacity 0.15s ease;
 }
 
 .command-overview-overlay.is-visible {
 	opacity: 1;
+	pointer-events: auto;
 }
 
 .command-overview-container {
@@ -161,11 +164,16 @@
 }
 
 /* Settings Styles */
-.command-search-settings {
+/* Spezifischer als Obsidians input[type='text']:focus, damit die Markierung beim Tippen sichtbar ist */
+input[type='text'].command-overview-settings-trigger-input.is-invalid {
+	border-color: var(--text-error);
+}
+
+.command-overview-settings-search {
 	margin-bottom: var(--size-4-3);
 }
 
-.command-search-input {
+.command-overview-settings-search-input {
 	width: 100%;
 	background: var(--background-secondary);
 	border: 1px solid var(--background-modifier-border);
@@ -176,11 +184,11 @@
 	outline: none;
 }
 
-.command-search-input:focus {
+.command-overview-settings-search-input:focus {
 	border-color: var(--interactive-accent);
 }
 
-.command-selection-container {
+.command-overview-settings-list {
 	max-height: 400px;
 	overflow-y: auto;
 	border: 1px solid var(--background-modifier-border);
@@ -188,16 +196,16 @@
 	padding: var(--size-4-2);
 }
 
-.command-selection-container .setting-item {
+.command-overview-settings-list .setting-item {
 	border: none;
 	padding: var(--size-4-1) var(--size-4-2);
 }
 
-.command-selection-container .setting-item-name {
+.command-overview-settings-list .setting-item-name {
 	font-size: var(--font-ui-small);
 }
 
-.command-selection-container .setting-item-description {
+.command-overview-settings-list .setting-item-description {
 	font-size: var(--font-ui-smaller);
 	opacity: 0.7;
 }

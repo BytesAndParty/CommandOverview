@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, Command } from 'obsidian';
+import { App, Command, Notice, Platform, Plugin, PluginSettingTab, Setting } from 'obsidian';
 
 // Extended type definitions for undocumented Obsidian APIs
 interface HotkeyInfo {
@@ -101,7 +101,10 @@ export default class CommandOverviewPlugin extends Plugin {
 	filteredCommands: CommandWithHotkey[] = [];
 	// For proper cleanup
 	private hideTimeoutId: number | null = null;
+	private closingOverlayEl: HTMLElement | null = null;
 	private abortController: AbortController | null = null;
+	// Im Hold-Modus per Trigger geöffnet: Loslassen der Trigger-Taste schließt das Overlay
+	private isHeldOpen = false;
 
 	/**
 	 * Get the app with extended type information for undocumented APIs
@@ -114,14 +117,14 @@ export default class CommandOverviewPlugin extends Plugin {
 		await this.loadSettings();
 
 		// Ribbon Icon hinzufügen
-		this.addRibbonIcon('list', 'Command Overview', () => {
+		this.addRibbonIcon('list', 'Command overview', () => {
 			this.toggleOverlay();
 		});
 
 		// Command registrieren
 		this.addCommand({
 			id: 'show-command-overview',
-			name: 'Show Command Overview',
+			name: 'Show command overview',
 			callback: () => {
 				this.toggleOverlay();
 			}
@@ -137,11 +140,8 @@ export default class CommandOverviewPlugin extends Plugin {
 	}
 
 	onunload() {
-		// Clean up any pending timeouts
-		if (this.hideTimeoutId !== null) {
-			window.clearTimeout(this.hideTimeoutId);
-			this.hideTimeoutId = null;
-		}
+		// Clean up pending hide timeout and a fading-out overlay
+		this.removeClosingOverlay();
 		// Abort any pending event listeners
 		this.abortController?.abort();
 		this.abortController = null;
@@ -151,10 +151,22 @@ export default class CommandOverviewPlugin extends Plugin {
 		this.listEl = null;
 		this.searchInputEl = null;
 		this.isOverlayVisible = false;
+		this.isHeldOpen = false;
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const data = await this.loadData();
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+		// Verschachtelte Werte kopieren, damit DEFAULT_SETTINGS nicht mitverändert wird
+		this.settings.modifiers = Object.assign({}, DEFAULT_SETTINGS.modifiers, data?.modifiers);
+		this.settings.selectedCommands = Array.isArray(data?.selectedCommands) ? [...data.selectedCommands] : [];
+		// Manuell bearbeitete oder beschädigte data.json abfangen
+		if (!isValidTriggerKey(this.settings.triggerKey)) {
+			this.settings.triggerKey = DEFAULT_SETTINGS.triggerKey;
+		}
+		if (this.settings.mode !== 'hold' && this.settings.mode !== 'toggle') {
+			this.settings.mode = DEFAULT_SETTINGS.mode;
+		}
 	}
 
 	async saveSettings() {
@@ -162,19 +174,41 @@ export default class CommandOverviewPlugin extends Plugin {
 	}
 
 	handleKeyDown(evt: KeyboardEvent) {
+		const isTrigger = this.matchesTrigger(evt);
+
 		// Wenn Overlay offen ist, Keyboard-Navigation
 		if (this.isOverlayVisible) {
+			if (isTrigger) {
+				// Trigger erneut gedrückt: Toggle schließt, Hold schließt beim Loslassen.
+				// Auto-Repeat (gehaltene Taste) wird ignoriert.
+				evt.preventDefault();
+				if (!evt.repeat) {
+					if (this.settings.mode === 'toggle') {
+						this.hideOverlay();
+					} else {
+						this.isHeldOpen = true;
+					}
+				}
+				return;
+			}
 			this.handleOverlayKeyDown(evt);
 			return;
 		}
 
-		if (this.matchesTrigger(evt)) {
+		if (isTrigger) {
 			evt.preventDefault();
-			this.showOverlay();
+			// Auto-Repeat öffnet nicht erneut (z. B. nach Escape bei gehaltener Taste)
+			if (!evt.repeat) {
+				this.showOverlay();
+				this.isHeldOpen = this.settings.mode === 'hold';
+			}
 		}
 	}
 
 	handleOverlayKeyDown(evt: KeyboardEvent) {
+		// Enter bestätigt während einer IME-Eingabe nur die Komposition
+		if (evt.isComposing) return;
+
 		const visibleItems = this.getVisibleItems();
 
 		switch (evt.key) {
@@ -223,17 +257,29 @@ export default class CommandOverviewPlugin extends Plugin {
 		if (selectedItem) {
 			const cmdId = selectedItem.dataset.commandId;
 			if (cmdId) {
-				this.hideOverlay();
-				this.extendedApp.commands.executeCommandById(cmdId);
+				this.runCommand(cmdId);
 			}
 		}
 	}
 
+	/**
+	 * Schließt das Overlay und führt den Command aus.
+	 * Obsidian liefert false, wenn der Command fehlt oder beim Ausführen einen Fehler wirft.
+	 */
+	private runCommand(cmdId: string) {
+		this.hideOverlay();
+		const commands = this.extendedApp.commands;
+		if (!commands.executeCommandById(cmdId)) {
+			const name = commands.commands[cmdId]?.name ?? cmdId;
+			new Notice(`Command "${name}" konnte nicht ausgeführt werden.`);
+		}
+	}
+
 	handleKeyUp(evt: KeyboardEvent) {
-		if (this.settings.mode === 'hold' && this.isOverlayVisible) {
-			if (this.isTriggerKey(evt)) {
-				this.hideOverlay();
-			}
+		// Nur schließen, wenn das Overlay per gehaltenem Trigger offen ist, nicht beim
+		// Tippen der Trigger-Taste in die Suche (Öffnen per Ribbon oder Command)
+		if (this.isHeldOpen && this.isOverlayVisible && this.isTriggerKey(evt)) {
+			this.hideOverlay();
 		}
 	}
 
@@ -264,6 +310,10 @@ export default class CommandOverviewPlugin extends Plugin {
 	showOverlay() {
 		if (this.isOverlayVisible) return;
 
+		// Ein noch ausblendendes Overlay sofort entfernen
+		this.removeClosingOverlay();
+		this.isHeldOpen = false;
+
 		// Create new AbortController for this overlay instance
 		this.abortController?.abort();
 		this.abortController = new AbortController();
@@ -272,8 +322,9 @@ export default class CommandOverviewPlugin extends Plugin {
 		this.selectedIndex = 0;
 		this.filteredCommands = this.getSelectedCommands();
 
-		this.overlayEl = document.createElement('div');
-		this.overlayEl.addClass('command-overview-overlay');
+		const overlayEl = document.createElement('div');
+		overlayEl.addClass('command-overview-overlay');
+		this.overlayEl = overlayEl;
 
 		const container = document.createElement('div');
 		container.addClass('command-overview-container');
@@ -284,7 +335,7 @@ export default class CommandOverviewPlugin extends Plugin {
 
 		const title = document.createElement('span');
 		title.addClass('command-overview-title');
-		title.textContent = 'Command Overview';
+		title.textContent = 'Command overview';
 		header.appendChild(title);
 
 		// Suchfeld
@@ -307,8 +358,7 @@ export default class CommandOverviewPlugin extends Plugin {
 			if (item) {
 				const cmdId = item.dataset.commandId;
 				if (cmdId) {
-					this.hideOverlay();
-					this.extendedApp.commands.executeCommandById(cmdId);
+					this.runCommand(cmdId);
 				}
 			}
 		}, { signal });
@@ -335,21 +385,23 @@ export default class CommandOverviewPlugin extends Plugin {
 		}
 
 		container.appendChild(this.listEl);
-		this.overlayEl.appendChild(container);
+		overlayEl.appendChild(container);
 
 		// Click außerhalb schließt Overlay
-		this.overlayEl.addEventListener('click', (e) => {
-			if (e.target === this.overlayEl) {
+		overlayEl.addEventListener('click', (e) => {
+			if (e.target === overlayEl) {
 				this.hideOverlay();
 			}
 		}, { signal });
 
-		document.body.appendChild(this.overlayEl);
+		document.body.appendChild(overlayEl);
 		this.isOverlayVisible = true;
 
 		// Animation und Focus
 		requestAnimationFrame(() => {
-			this.overlayEl?.addClass('is-visible');
+			// Vor dem ersten Frame wieder geschlossen (z. B. kurzer Tastendruck im Hold-Modus)
+			if (this.overlayEl !== overlayEl) return;
+			overlayEl.addClass('is-visible');
 			this.searchInputEl?.focus();
 			this.updateSelection();
 		});
@@ -427,7 +479,6 @@ export default class CommandOverviewPlugin extends Plugin {
 
 		// Verstecke leere Gruppen
 		groups.forEach((group) => {
-			const groupName = (group as HTMLElement).dataset.group;
 			let nextSibling = group.nextElementSibling;
 			let hasVisibleItems = false;
 
@@ -447,27 +498,42 @@ export default class CommandOverviewPlugin extends Plugin {
 	}
 
 	hideOverlay() {
-		if (!this.overlayEl) return;
+		const overlayEl = this.overlayEl;
+		if (!overlayEl) return;
 
 		// Abort all event listeners attached to overlay elements
 		this.abortController?.abort();
 		this.abortController = null;
 
-		this.overlayEl.removeClass('is-visible');
+		// Zustand sofort zurücksetzen: Während der Ausblend-Animation darf das Overlay
+		// keine Tasten mehr abfangen (sonst z. B. doppelte Ausführung per Enter) und
+		// muss sich sofort wieder öffnen lassen.
+		this.overlayEl = null;
+		this.listEl = null;
+		this.searchInputEl = null;
+		this.isOverlayVisible = false;
+		this.isHeldOpen = false;
 
-		// Clear any pending hide timeout
-		if (this.hideTimeoutId !== null) {
-			window.clearTimeout(this.hideTimeoutId);
-		}
-
+		this.removeClosingOverlay();
+		overlayEl.removeClass('is-visible');
+		this.closingOverlayEl = overlayEl;
 		this.hideTimeoutId = window.setTimeout(() => {
-			this.overlayEl?.remove();
-			this.overlayEl = null;
-			this.listEl = null;
-			this.searchInputEl = null;
-			this.isOverlayVisible = false;
+			overlayEl.remove();
+			this.closingOverlayEl = null;
 			this.hideTimeoutId = null;
 		}, 150);
+	}
+
+	/**
+	 * Entfernt ein noch ausblendendes Overlay sofort und bricht dessen Timer ab.
+	 */
+	private removeClosingOverlay() {
+		if (this.hideTimeoutId !== null) {
+			window.clearTimeout(this.hideTimeoutId);
+			this.hideTimeoutId = null;
+		}
+		this.closingOverlayEl?.remove();
+		this.closingOverlayEl = null;
 	}
 
 	createCommandItem(cmd: CommandWithHotkey, index: number): HTMLElement {
@@ -546,16 +612,18 @@ export default class CommandOverviewPlugin extends Plugin {
 		return 'Obsidian';
 	}
 
-	formatHotkey(hotkey: any): string {
+	formatHotkey(hotkey: HotkeyInfo | undefined): string {
 		if (!hotkey) return '';
 
 		const parts: string[] = [];
-		if (hotkey.modifiers) {
-			if (hotkey.modifiers.includes('Ctrl') || hotkey.modifiers.includes('Mod')) parts.push('Ctrl');
-			if (hotkey.modifiers.includes('Shift')) parts.push('Shift');
-			if (hotkey.modifiers.includes('Alt')) parts.push('Alt');
-			if (hotkey.modifiers.includes('Meta')) parts.push('Cmd');
-		}
+		const modifiers = hotkey.modifiers ?? [];
+		// "Mod" ist unter macOS die Cmd-Taste, sonst Ctrl
+		const isMac = Platform.isMacOS;
+		const hasMod = modifiers.includes('Mod');
+		if (modifiers.includes('Ctrl') || (hasMod && !isMac)) parts.push('Ctrl');
+		if (modifiers.includes('Shift')) parts.push('Shift');
+		if (modifiers.includes('Alt')) parts.push('Alt');
+		if (modifiers.includes('Meta') || (hasMod && isMac)) parts.push(isMac ? 'Cmd' : 'Win');
 		if (hotkey.key) parts.push(hotkey.key);
 
 		return parts.join(' + ');
@@ -578,8 +646,6 @@ class CommandOverviewSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-
-		containerEl.createEl('h2', { text: 'Command Overview Einstellungen' });
 
 		// Modus Auswahl
 		new Setting(containerEl)
@@ -609,22 +675,36 @@ class CommandOverviewSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('Trigger-Taste')
 			.setDesc('Die Taste die das Overlay öffnet (z.B. Slash, F1, KeyK). Gültige Werte: F1-F12, KeyA-KeyZ, Digit0-9, Slash, Space, etc.')
-			.addText(text => text
-				.setPlaceholder('Slash')
-				.setValue(this.plugin.settings.triggerKey)
-				.onChange(async (value) => {
-					const trimmed = value.trim();
-					if (isValidTriggerKey(trimmed)) {
-						this.plugin.settings.triggerKey = trimmed;
-						await this.plugin.saveSettings();
-					} else if (trimmed.length > 0) {
-						// Reset to previous valid value if invalid
-						text.setValue(this.plugin.settings.triggerKey);
+			.addText(text => {
+				text
+					.setPlaceholder('Slash')
+					.setValue(this.plugin.settings.triggerKey)
+					.onChange(async (value) => {
+						const trimmed = value.trim();
+						const isValid = isValidTriggerKey(trimmed);
+						// Ungültige Zwischenstände beim Tippen (z. B. "Ke" auf dem Weg zu "KeyK")
+						// nur markieren; gespeichert werden ausschließlich gültige Werte
+						text.inputEl.toggleClass('is-invalid', !isValid && trimmed.length > 0);
+						if (isValid) {
+							this.plugin.settings.triggerKey = trimmed;
+							await this.plugin.saveSettings();
+						}
+					});
+				text.inputEl.addClass('command-overview-settings-trigger-input');
+				// Beim Verlassen des Feldes einen ungültigen Wert auf den gespeicherten zurücksetzen
+				text.inputEl.addEventListener('blur', () => {
+					const trimmed = text.getValue().trim();
+					if (isValidTriggerKey(trimmed)) return;
+					if (trimmed.length > 0) {
+						new Notice(`Ungültige Trigger-Taste "${trimmed}". Der bisherige Wert bleibt aktiv.`);
 					}
-				}));
+					text.setValue(this.plugin.settings.triggerKey);
+					text.inputEl.removeClass('is-invalid');
+				});
+			});
 
 		// Modifiers
-		containerEl.createEl('h3', { text: 'Modifier-Tasten' });
+		new Setting(containerEl).setName('Modifier-Tasten').setHeading();
 
 		new Setting(containerEl)
 			.setName('Ctrl')
@@ -663,17 +743,17 @@ class CommandOverviewSettingTab extends PluginSettingTab {
 				}));
 
 		// Command Auswahl
-		containerEl.createEl('h3', { text: 'Commands auswählen' });
+		new Setting(containerEl).setName('Commands auswählen').setHeading();
 
 		// Suchfeld für Settings
-		const searchContainer = containerEl.createDiv('command-search-settings');
+		const searchContainer = containerEl.createDiv('command-overview-settings-search');
 		const searchInput = searchContainer.createEl('input', {
 			type: 'text',
 			placeholder: 'Commands durchsuchen...',
-			cls: 'command-search-input'
+			cls: 'command-overview-settings-search-input'
 		});
 
-		const commandsContainer = containerEl.createDiv('command-selection-container');
+		const commandsContainer = containerEl.createDiv('command-overview-settings-list');
 
 		const allCommands = this.plugin.getAllCommands();
 		allCommands.sort((a, b) => a.name.localeCompare(b.name));

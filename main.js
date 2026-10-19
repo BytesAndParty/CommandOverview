@@ -115,7 +115,10 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     this.filteredCommands = [];
     // For proper cleanup
     this.hideTimeoutId = null;
+    this.closingOverlayEl = null;
     this.abortController = null;
+    // Im Hold-Modus per Trigger geöffnet: Loslassen der Trigger-Taste schließt das Overlay
+    this.isHeldOpen = false;
   }
   /**
    * Get the app with extended type information for undocumented APIs
@@ -125,12 +128,12 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
   }
   async onload() {
     await this.loadSettings();
-    this.addRibbonIcon("list", "Command Overview", () => {
+    this.addRibbonIcon("list", "Command overview", () => {
       this.toggleOverlay();
     });
     this.addCommand({
       id: "show-command-overview",
-      name: "Show Command Overview",
+      name: "Show command overview",
       callback: () => {
         this.toggleOverlay();
       }
@@ -141,10 +144,7 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
   }
   onunload() {
     var _a, _b;
-    if (this.hideTimeoutId !== null) {
-      window.clearTimeout(this.hideTimeoutId);
-      this.hideTimeoutId = null;
-    }
+    this.removeClosingOverlay();
     (_a = this.abortController) == null ? void 0 : _a.abort();
     this.abortController = null;
     (_b = this.overlayEl) == null ? void 0 : _b.remove();
@@ -152,24 +152,50 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     this.listEl = null;
     this.searchInputEl = null;
     this.isOverlayVisible = false;
+    this.isHeldOpen = false;
   }
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const data = await this.loadData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+    this.settings.modifiers = Object.assign({}, DEFAULT_SETTINGS.modifiers, data == null ? void 0 : data.modifiers);
+    this.settings.selectedCommands = Array.isArray(data == null ? void 0 : data.selectedCommands) ? [...data.selectedCommands] : [];
+    if (!isValidTriggerKey(this.settings.triggerKey)) {
+      this.settings.triggerKey = DEFAULT_SETTINGS.triggerKey;
+    }
+    if (this.settings.mode !== "hold" && this.settings.mode !== "toggle") {
+      this.settings.mode = DEFAULT_SETTINGS.mode;
+    }
   }
   async saveSettings() {
     await this.saveData(this.settings);
   }
   handleKeyDown(evt) {
+    const isTrigger = this.matchesTrigger(evt);
     if (this.isOverlayVisible) {
+      if (isTrigger) {
+        evt.preventDefault();
+        if (!evt.repeat) {
+          if (this.settings.mode === "toggle") {
+            this.hideOverlay();
+          } else {
+            this.isHeldOpen = true;
+          }
+        }
+        return;
+      }
       this.handleOverlayKeyDown(evt);
       return;
     }
-    if (this.matchesTrigger(evt)) {
+    if (isTrigger) {
       evt.preventDefault();
-      this.showOverlay();
+      if (!evt.repeat) {
+        this.showOverlay();
+        this.isHeldOpen = this.settings.mode === "hold";
+      }
     }
   }
   handleOverlayKeyDown(evt) {
+    if (evt.isComposing) return;
     const visibleItems = this.getVisibleItems();
     switch (evt.key) {
       case "ArrowDown":
@@ -212,16 +238,26 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     if (selectedItem) {
       const cmdId = selectedItem.dataset.commandId;
       if (cmdId) {
-        this.hideOverlay();
-        this.extendedApp.commands.executeCommandById(cmdId);
+        this.runCommand(cmdId);
       }
     }
   }
+  /**
+   * Schließt das Overlay und führt den Command aus.
+   * Obsidian liefert false, wenn der Command fehlt oder beim Ausführen einen Fehler wirft.
+   */
+  runCommand(cmdId) {
+    var _a, _b;
+    this.hideOverlay();
+    const commands = this.extendedApp.commands;
+    if (!commands.executeCommandById(cmdId)) {
+      const name = (_b = (_a = commands.commands[cmdId]) == null ? void 0 : _a.name) != null ? _b : cmdId;
+      new import_obsidian.Notice(`Command "${name}" konnte nicht ausgef\xFChrt werden.`);
+    }
+  }
   handleKeyUp(evt) {
-    if (this.settings.mode === "hold" && this.isOverlayVisible) {
-      if (this.isTriggerKey(evt)) {
-        this.hideOverlay();
-      }
+    if (this.isHeldOpen && this.isOverlayVisible && this.isTriggerKey(evt)) {
+      this.hideOverlay();
     }
   }
   matchesTrigger(evt) {
@@ -242,20 +278,23 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
   showOverlay() {
     var _a;
     if (this.isOverlayVisible) return;
+    this.removeClosingOverlay();
+    this.isHeldOpen = false;
     (_a = this.abortController) == null ? void 0 : _a.abort();
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
     this.selectedIndex = 0;
     this.filteredCommands = this.getSelectedCommands();
-    this.overlayEl = document.createElement("div");
-    this.overlayEl.addClass("command-overview-overlay");
+    const overlayEl = document.createElement("div");
+    overlayEl.addClass("command-overview-overlay");
+    this.overlayEl = overlayEl;
     const container = document.createElement("div");
     container.addClass("command-overview-container");
     const header = document.createElement("div");
     header.addClass("command-overview-header");
     const title = document.createElement("span");
     title.addClass("command-overview-title");
-    title.textContent = "Command Overview";
+    title.textContent = "Command overview";
     header.appendChild(title);
     this.searchInputEl = document.createElement("input");
     this.searchInputEl.type = "text";
@@ -271,8 +310,7 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
       if (item) {
         const cmdId = item.dataset.commandId;
         if (cmdId) {
-          this.hideOverlay();
-          this.extendedApp.commands.executeCommandById(cmdId);
+          this.runCommand(cmdId);
         }
       }
     }, { signal });
@@ -296,18 +334,19 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
       this.renderCommands();
     }
     container.appendChild(this.listEl);
-    this.overlayEl.appendChild(container);
-    this.overlayEl.addEventListener("click", (e) => {
-      if (e.target === this.overlayEl) {
+    overlayEl.appendChild(container);
+    overlayEl.addEventListener("click", (e) => {
+      if (e.target === overlayEl) {
         this.hideOverlay();
       }
     }, { signal });
-    document.body.appendChild(this.overlayEl);
+    document.body.appendChild(overlayEl);
     this.isOverlayVisible = true;
     requestAnimationFrame(() => {
-      var _a2, _b;
-      (_a2 = this.overlayEl) == null ? void 0 : _a2.addClass("is-visible");
-      (_b = this.searchInputEl) == null ? void 0 : _b.focus();
+      var _a2;
+      if (this.overlayEl !== overlayEl) return;
+      overlayEl.addClass("is-visible");
+      (_a2 = this.searchInputEl) == null ? void 0 : _a2.focus();
       this.updateSelection();
     });
   }
@@ -366,7 +405,6 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
       item.toggleClass("is-hidden", !matches);
     });
     groups.forEach((group) => {
-      const groupName = group.dataset.group;
       let nextSibling = group.nextElementSibling;
       let hasVisibleItems = false;
       while (nextSibling && !nextSibling.hasClass("command-overview-group")) {
@@ -382,22 +420,35 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
   }
   hideOverlay() {
     var _a;
-    if (!this.overlayEl) return;
+    const overlayEl = this.overlayEl;
+    if (!overlayEl) return;
     (_a = this.abortController) == null ? void 0 : _a.abort();
     this.abortController = null;
-    this.overlayEl.removeClass("is-visible");
-    if (this.hideTimeoutId !== null) {
-      window.clearTimeout(this.hideTimeoutId);
-    }
+    this.overlayEl = null;
+    this.listEl = null;
+    this.searchInputEl = null;
+    this.isOverlayVisible = false;
+    this.isHeldOpen = false;
+    this.removeClosingOverlay();
+    overlayEl.removeClass("is-visible");
+    this.closingOverlayEl = overlayEl;
     this.hideTimeoutId = window.setTimeout(() => {
-      var _a2;
-      (_a2 = this.overlayEl) == null ? void 0 : _a2.remove();
-      this.overlayEl = null;
-      this.listEl = null;
-      this.searchInputEl = null;
-      this.isOverlayVisible = false;
+      overlayEl.remove();
+      this.closingOverlayEl = null;
       this.hideTimeoutId = null;
     }, 150);
+  }
+  /**
+   * Entfernt ein noch ausblendendes Overlay sofort und bricht dessen Timer ab.
+   */
+  removeClosingOverlay() {
+    var _a;
+    if (this.hideTimeoutId !== null) {
+      window.clearTimeout(this.hideTimeoutId);
+      this.hideTimeoutId = null;
+    }
+    (_a = this.closingOverlayEl) == null ? void 0 : _a.remove();
+    this.closingOverlayEl = null;
   }
   createCommandItem(cmd, index) {
     const item = document.createElement("div");
@@ -455,14 +506,16 @@ var CommandOverviewPlugin = class extends import_obsidian.Plugin {
     return "Obsidian";
   }
   formatHotkey(hotkey) {
+    var _a;
     if (!hotkey) return "";
     const parts = [];
-    if (hotkey.modifiers) {
-      if (hotkey.modifiers.includes("Ctrl") || hotkey.modifiers.includes("Mod")) parts.push("Ctrl");
-      if (hotkey.modifiers.includes("Shift")) parts.push("Shift");
-      if (hotkey.modifiers.includes("Alt")) parts.push("Alt");
-      if (hotkey.modifiers.includes("Meta")) parts.push("Cmd");
-    }
+    const modifiers = (_a = hotkey.modifiers) != null ? _a : [];
+    const isMac = import_obsidian.Platform.isMacOS;
+    const hasMod = modifiers.includes("Mod");
+    if (modifiers.includes("Ctrl") || hasMod && !isMac) parts.push("Ctrl");
+    if (modifiers.includes("Shift")) parts.push("Shift");
+    if (modifiers.includes("Alt")) parts.push("Alt");
+    if (modifiers.includes("Meta") || hasMod && isMac) parts.push(isMac ? "Cmd" : "Win");
     if (hotkey.key) parts.push(hotkey.key);
     return parts.join(" + ");
   }
@@ -479,7 +532,6 @@ var CommandOverviewSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Command Overview Einstellungen" });
     new import_obsidian.Setting(containerEl).setName("Modus").setDesc("Hold: Overlay sichtbar solange Taste gedr\xFCckt. Toggle: Ein/Aus per Tastendruck.").addDropdown((dropdown) => dropdown.addOption("hold", "Hold (gedr\xFCckt halten)").addOption("toggle", "Toggle (ein/aus)").setValue(this.plugin.settings.mode).onChange(async (value) => {
       this.plugin.settings.mode = value;
       await this.plugin.saveSettings();
@@ -488,16 +540,28 @@ var CommandOverviewSettingTab = class extends import_obsidian.PluginSettingTab {
       this.plugin.settings.groupByPlugin = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian.Setting(containerEl).setName("Trigger-Taste").setDesc("Die Taste die das Overlay \xF6ffnet (z.B. Slash, F1, KeyK). G\xFCltige Werte: F1-F12, KeyA-KeyZ, Digit0-9, Slash, Space, etc.").addText((text) => text.setPlaceholder("Slash").setValue(this.plugin.settings.triggerKey).onChange(async (value) => {
-      const trimmed = value.trim();
-      if (isValidTriggerKey(trimmed)) {
-        this.plugin.settings.triggerKey = trimmed;
-        await this.plugin.saveSettings();
-      } else if (trimmed.length > 0) {
+    new import_obsidian.Setting(containerEl).setName("Trigger-Taste").setDesc("Die Taste die das Overlay \xF6ffnet (z.B. Slash, F1, KeyK). G\xFCltige Werte: F1-F12, KeyA-KeyZ, Digit0-9, Slash, Space, etc.").addText((text) => {
+      text.setPlaceholder("Slash").setValue(this.plugin.settings.triggerKey).onChange(async (value) => {
+        const trimmed = value.trim();
+        const isValid = isValidTriggerKey(trimmed);
+        text.inputEl.toggleClass("is-invalid", !isValid && trimmed.length > 0);
+        if (isValid) {
+          this.plugin.settings.triggerKey = trimmed;
+          await this.plugin.saveSettings();
+        }
+      });
+      text.inputEl.addClass("command-overview-settings-trigger-input");
+      text.inputEl.addEventListener("blur", () => {
+        const trimmed = text.getValue().trim();
+        if (isValidTriggerKey(trimmed)) return;
+        if (trimmed.length > 0) {
+          new import_obsidian.Notice(`Ung\xFCltige Trigger-Taste "${trimmed}". Der bisherige Wert bleibt aktiv.`);
+        }
         text.setValue(this.plugin.settings.triggerKey);
-      }
-    }));
-    containerEl.createEl("h3", { text: "Modifier-Tasten" });
+        text.inputEl.removeClass("is-invalid");
+      });
+    });
+    new import_obsidian.Setting(containerEl).setName("Modifier-Tasten").setHeading();
     new import_obsidian.Setting(containerEl).setName("Ctrl").addToggle((toggle) => toggle.setValue(this.plugin.settings.modifiers.ctrl).onChange(async (value) => {
       this.plugin.settings.modifiers.ctrl = value;
       await this.plugin.saveSettings();
@@ -514,14 +578,14 @@ var CommandOverviewSettingTab = class extends import_obsidian.PluginSettingTab {
       this.plugin.settings.modifiers.meta = value;
       await this.plugin.saveSettings();
     }));
-    containerEl.createEl("h3", { text: "Commands ausw\xE4hlen" });
-    const searchContainer = containerEl.createDiv("command-search-settings");
+    new import_obsidian.Setting(containerEl).setName("Commands ausw\xE4hlen").setHeading();
+    const searchContainer = containerEl.createDiv("command-overview-settings-search");
     const searchInput = searchContainer.createEl("input", {
       type: "text",
       placeholder: "Commands durchsuchen...",
-      cls: "command-search-input"
+      cls: "command-overview-settings-search-input"
     });
-    const commandsContainer = containerEl.createDiv("command-selection-container");
+    const commandsContainer = containerEl.createDiv("command-overview-settings-list");
     const allCommands = this.plugin.getAllCommands();
     allCommands.sort((a, b) => a.name.localeCompare(b.name));
     const renderCommands = (filter) => {

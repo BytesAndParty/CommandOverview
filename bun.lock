@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "commandoverview",
@@ -8,9 +9,7 @@
         "@types/node": "^25.0.5",
         "esbuild": "^0.27.2",
         "obsidian": "^1.11.4",
-      },
-      "peerDependencies": {
-        "typescript": "^5",
+        "typescript": "^5.9.3",
       },
     },
   },
